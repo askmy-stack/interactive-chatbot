@@ -14,8 +14,7 @@ individual LLM tokens as they arrive and announces tool calls in real time.
 from __future__ import annotations
 
 import structlog
-from langchain.agents import create_tool_calling_agent
-from langchain_core.agents import AgentExecutor
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI

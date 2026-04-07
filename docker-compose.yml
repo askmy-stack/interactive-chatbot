@@ -1,0 +1,20 @@
+services:
+  jarvis:
+    build: .
+    ports:
+      - "8501:8501"   # Streamlit UI
+      - "8000:8000"   # FastAPI backend
+    env_file: .env
+    environment:
+      # Tell Streamlit where the backend is (inside Docker, same container)
+      BACKEND_URL: "http://localhost:8000"
+    volumes:
+      # Persist the ChromaDB vector store across container restarts
+      - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
