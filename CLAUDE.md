@@ -1,90 +1,155 @@
 # CLAUDE.md
 
-This file provides guidance for AI assistants working with this codebase.
+Guidance for AI assistants working in this codebase.
+
+---
 
 ## Repository Overview
 
-A minimal Python-based conversational chatbot built with Streamlit and LangChain. The app provides a web UI for chatting with an OpenAI-powered assistant configured as a "comedian AI assistant". A Jupyter notebook accompanies the app with exploratory LangChain examples.
+**Jarvis** is a personal AI assistant built with LangChain v0.3, FastAPI, and Streamlit.
+
+Core capabilities:
+- **Tool-calling agent** — routes user requests to real tools (web search, weather, system info, smart home)
+- **Streaming responses** — tokens stream from the LLM to the browser in real time
+- **Persistent vector memory** — ChromaDB stores conversation history across sessions
+- **Observability** — structured logging via structlog, optional LangSmith tracing
+
+---
 
 ## File Structure
 
 ```
 Interactive-Chatbot/
-├── app.py              # Main Streamlit web application (entry point)
-├── langchain.ipynb     # Exploratory notebook with LangChain patterns and examples
-└── README.md           # Minimal project title only
+├── app.py                        # Streamlit frontend — calls FastAPI backend
+├── backend/
+│   ├── config.py                 # Pydantic settings (reads .env)
+│   ├── memory.py                 # ChromaDB vector memory helpers
+│   ├── agent.py                  # LangChain AgentExecutor + astream_response()
+│   ├── main.py                   # FastAPI app with /chat/stream, /health, etc.
+│   └── tools/
+│       ├── system_info.py        # psutil CPU/memory/disk tool
+│       ├── web_search.py         # DuckDuckGo search tool
+│       ├── weather.py            # Open-Meteo weather tool
+│       └── device_control.py    # Home Assistant REST API tool
+├── tests/
+│   ├── conftest.py               # Injects fake OPENAI_API_KEY for all tests
+│   ├── test_tools.py             # Unit tests for tools (no LLM calls)
+│   └── test_api.py               # FastAPI endpoint tests (agent mocked)
+├── .github/workflows/ci.yml      # GitHub Actions: lint + typecheck + test + secret scan
+├── langchain.ipynb               # Exploratory LangChain notebook (reference only)
+├── pyproject.toml                # All dependencies + tool config (ruff, mypy, pytest)
+├── .env.example                  # Template for required env vars
+├── Dockerfile                    # Single-container build (backend + UI)
+└── docker-compose.yml            # One-command local deployment
 ```
 
-No `requirements.txt`, `.gitignore`, `.env.example`, tests, or CI/CD configuration currently exist.
+---
 
 ## Tech Stack
 
-- **Python 3.11**
-- **Streamlit** — Web UI framework; handles page layout and session state
-- **LangChain** — LLM orchestration (`langchain.chat_models.ChatOpenAI`, `langchain.schema`)
-- **OpenAI API** — Backend model (`gpt-3.5-turbo` via `ChatOpenAI`)
-- **HuggingFace Hub** — Alternative LLM provider used in the notebook
-- **python-dotenv** — Loads `OPENAI_API_KEY` from a `.env` file
+| Component | Package | Version |
+|---|---|---|
+| LLM | `langchain-openai` → `ChatOpenAI` | `gpt-4o-mini` |
+| Agent | `langchain` → `create_tool_calling_agent` + `AgentExecutor` | v0.3 |
+| Streaming | `AgentExecutor.astream_events(version="v2")` | — |
+| Vector DB | `langchain-chroma` → `Chroma` | `text-embedding-3-small` |
+| Backend | `fastapi` + `uvicorn` | async, StreamingResponse |
+| Frontend | `streamlit` | `st.chat_input`, `st.chat_message` |
+| Config | `pydantic-settings` → `BaseSettings` | reads `.env` |
+| Logging | `structlog` | JSON structured logs |
 
-## Running the App
+---
+
+## Running Locally
 
 ```bash
-# Install dependencies (no requirements.txt — install manually)
-pip install streamlit langchain openai python-dotenv huggingface-hub
+# Install deps
+pip install uv && uv pip install --system ".[dev]"
 
-# Create .env file with required credentials
-echo "OPENAI_API_KEY=your-key-here" > .env
-echo "HUGGINGFACEHUB_API_TOKEN=your-token-here" >> .env
+# Configure
+cp .env.example .env        # then add OPENAI_API_KEY
 
-# Start the Streamlit dev server
+# Start backend (port 8000)
+uvicorn backend.main:app --reload
+
+# Start UI (port 8501)
 streamlit run app.py
 ```
 
-The app runs on `http://localhost:8501` by default.
+Or with Docker:
+```bash
+docker compose up --build
+```
+
+---
 
 ## Key Conventions
 
-- **Language:** Python only; no JavaScript or frontend build tooling
-- **Naming:** snake_case for functions and variables (`get_chatmodel_response`, `flowmessages`)
-- **Session state key:** `st.session_state['flowmessages']` holds the full message history as a list of LangChain message objects (`SystemMessage`, `HumanMessage`, `AIMessage`)
-- **Model config:** `ChatOpenAI(temperature=0.5)` — initialized once at module scope
-- **System prompt:** Defined inline as `SystemMessage(content="...")` at session state initialization
+### Config
+- All settings live in `backend/config.py` as a `Settings(BaseSettings)` class
+- Single shared `settings` instance imported as `from backend.config import settings`
+- `settings` raises `ValidationError` at startup if `OPENAI_API_KEY` is missing — fail fast
+- Tools read `settings` at **call time** (not import time) for testability
 
-## Known Issues and Quirks
+### Agent & Streaming
+- The agent singleton is built lazily in `backend/agent.py` via `get_executor()`
+- Streaming is done via `astream_events(version="v2")` — yields `on_chat_model_stream` and `on_tool_start` events
+- `astream_response()` is an async generator yielding string chunks — it also saves the exchange to ChromaDB after completion
+- Never call `get_executor()` at module level — it requires `OPENAI_API_KEY` to be set
 
-- **Logic flaw in app.py:** `get_chatmodel_response(input)` is called unconditionally on every Streamlit rerun (line 34), before the submit button is checked. This means the model is called on every keystroke. The submit button only controls whether the response is displayed, not whether it's generated.
-- **Typo in system prompt:** `"Yor are a comedian AI assitant"` — "Yor" and "assitant" are misspelled (app.py:19).
-- **Shadows built-in:** The variable `input` on line 33 shadows Python's built-in `input()` function.
-- **No `.gitignore`:** The repo has no `.gitignore`. Never commit `.env` files or API keys.
-- **No persistent storage:** Conversation history lives only in Streamlit session state and is lost on page refresh.
+### Tools
+- Each tool is a `@tool`-decorated function in its own file under `backend/tools/`
+- All tools must have a clear docstring — LangChain uses it to decide when to call the tool
+- `control_device` uses **strict allow-lists** for both domain and action — never pass raw LLM output to external APIs
+- Tools that require optional credentials (Home Assistant) return a friendly config message when unconfigured
 
-## LangChain Patterns (from langchain.ipynb)
+### FastAPI
+- `POST /chat/stream` is the only stateful endpoint — it reads/writes `session_histories`
+- `session_histories` is an in-memory dict — acceptable for local use, replace with Redis for multi-instance deployments
+- The streaming response media type is `text/plain` — Streamlit reads it with `requests` + `stream=True`
 
-The notebook demonstrates these LangChain patterns — reference it when extending functionality:
+### Streamlit
+- `st.session_state.session_id` is a UUID generated once per browser session
+- `st.session_state.messages` is a list of `{role, content}` dicts rendered with `st.chat_message`
+- The sidebar "example prompts" buttons use `st.session_state.prefill` to pass a value into the next `st.chat_input` render cycle
 
-| Pattern | Description |
-|---|---|
-| `LLM` | Basic completion via `OpenAI(model_name="text-davinci-003")` |
-| `ChatOpenAI` | Chat model with message history |
-| `PromptTemplate` | Parameterized prompt construction |
-| `LLMChain` | Chain a prompt template with an LLM |
-| `SimpleSequentialChain` | Chain multiple `LLMChain`s sequentially (single input/output) |
-| `SequentialChain` | Multi-input/output sequential chain with named variables |
-| LCEL (`\|` operator) | Modern LangChain Expression Language for chain composition |
-| `HuggingFaceHub` | Use HuggingFace models (e.g. `google/flan-t5-large`) as LLM backend |
+---
+
+## Testing
+
+```bash
+pytest tests/ -v           # all tests
+pytest tests/test_tools.py # tools only (no LLM, fast)
+pytest tests/test_api.py   # endpoint tests (agent mocked)
+```
+
+- `conftest.py` injects `OPENAI_API_KEY=sk-test-placeholder-for-ci` for all tests
+- API tests mock `astream_response` — no real OpenAI calls
+- Tool tests cover: allow-list enforcement, graceful degradation without credentials, real system calls
+
+---
 
 ## Environment Variables
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `OPENAI_API_KEY` | Yes (for app.py) | Authenticates requests to OpenAI API |
-| `HUGGINGFACEHUB_API_TOKEN` | Yes (for notebook) | Authenticates requests to HuggingFace Hub |
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `OPENAI_API_KEY` | Yes | — | OpenAI API authentication |
+| `MODEL_NAME` | No | `gpt-4o-mini` | LLM model ID |
+| `TEMPERATURE` | No | `0.5` | LLM temperature |
+| `LANGCHAIN_TRACING_V2` | No | `false` | Enable LangSmith tracing |
+| `LANGCHAIN_API_KEY` | No | — | LangSmith API key |
+| `LANGCHAIN_PROJECT` | No | `jarvis-chatbot` | LangSmith project name |
+| `HOME_ASSISTANT_URL` | No | — | Home Assistant base URL |
+| `HOME_ASSISTANT_TOKEN` | No | — | HA long-lived access token |
+| `BACKEND_URL` | No | `http://localhost:8000` | Backend URL for Streamlit |
 
-Store these in a `.env` file at the project root. The app loads them via `load_dotenv()`.
+**Never commit `.env` to git.** The `.gitignore` excludes it. CI uses a placeholder key.
 
-## Development Notes
+---
 
-- There are no tests. When adding features, consider adding a `tests/` directory with pytest.
-- There is no `requirements.txt`. If adding dependencies, create one: `pip freeze > requirements.txt`.
-- The notebook (`langchain.ipynb`) is exploratory and not imported by `app.py`.
-- All conversation context is managed through LangChain message objects appended to `st.session_state['flowmessages']`. To change the AI's persona, modify the `SystemMessage` content at session initialization.
+## Known Issues / Future Work
+
+- `session_histories` in `main.py` is in-memory — lost on restart. Replace with Redis for persistence.
+- The `langchain.ipynb` notebook still contains hardcoded API keys in cells 1 and 4 — **revoke those keys if they haven't been already**.
+- The notebook uses deprecated LangChain v0.1 imports — it is exploratory only and not imported by the app.
+- ChromaDB `chroma_db/` directory is gitignored. In production, back it up or use a hosted vector store (Pinecone, Weaviate).
