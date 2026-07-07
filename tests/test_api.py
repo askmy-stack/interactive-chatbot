@@ -5,9 +5,10 @@ Uses FastAPI's synchronous TestClient. The agent is NOT initialised
 (no real LLM calls) — only structural endpoint behaviour is tested.
 """
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
 
 
 @pytest.fixture

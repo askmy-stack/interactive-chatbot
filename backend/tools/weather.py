@@ -1,7 +1,7 @@
 """Tool: current weather via Open-Meteo (free, no API key required)."""
 
-import structlog
 import requests
+import structlog
 from langchain_core.tools import tool
 
 log = structlog.get_logger()
@@ -32,7 +32,8 @@ def get_weather(city: str) -> str:
 
     # Step 1: geocode the city name
     try:
-        geo = requests.get(GEOCODE_URL, params={"name": city, "count": 1}, timeout=5).json()
+        geo_params: dict[str, str | int] = {"name": city, "count": 1}
+        geo = requests.get(GEOCODE_URL, params=geo_params, timeout=5).json()
     except Exception as exc:
         return f"Geocoding failed: {exc}"
 
@@ -40,20 +41,22 @@ def get_weather(city: str) -> str:
         return f"Could not find location: '{city}'. Try a more specific city name."
 
     loc = geo["results"][0]
-    lat, lon = loc["latitude"], loc["longitude"]
+    lat, lon = float(loc["latitude"]), float(loc["longitude"])
     label = f"{loc['name']}, {loc.get('admin1', '')}, {loc.get('country', '')}".strip(", ")
 
     # Step 2: fetch current weather
     try:
+        weather_params: dict[str, str | float] = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,wind_speed_10m,weather_code",
+            "temperature_unit": "celsius",
+            "wind_speed_unit": "kmh",
+        }
+
         weather = requests.get(
             WEATHER_URL,
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "current": "temperature_2m,wind_speed_10m,weather_code",
-                "temperature_unit": "celsius",
-                "wind_speed_unit": "kmh",
-            },
+            params=weather_params,
             timeout=5,
         ).json()["current"]
     except Exception as exc:

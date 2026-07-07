@@ -14,14 +14,14 @@ individual LLM tokens as they arrive and announces tool calls in real time.
 from __future__ import annotations
 
 import structlog
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.agents import create_tool_calling_agent  # type: ignore[attr-defined]
+from langchain.agents.agent import AgentExecutor
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
 from backend.config import settings
 from backend.memory import retrieve_memories, save_to_memory
-from backend.tools.calendar_apple import get_free_time_blocks, get_next_event, get_today_schedule
 from backend.tools.device_control import control_device
 from backend.tools.system_info import get_system_info
 from backend.tools.weather import get_weather
@@ -34,9 +34,6 @@ TOOLS = [
     web_search,
     get_weather,
     control_device,
-    get_today_schedule,
-    get_next_event,
-    get_free_time_blocks,
 ]
 
 SYSTEM_PROMPT = """\
@@ -46,9 +43,6 @@ You are Jarvis, a highly capable personal AI assistant. You have access to these
 • web_search        — search the web for current information
 • get_weather       — get live weather for any city worldwide
 • control_device    — control smart home devices via Home Assistant
-• get_today_schedule — read today's Apple Calendar events
-• get_next_event    — get your next scheduled calendar event
-• get_free_time_blocks — get open windows in today's calendar
 
 Behaviour rules:
 - Be concise and action-oriented. Confirm every action you take.

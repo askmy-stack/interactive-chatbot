@@ -11,9 +11,12 @@ Then run this UI:
     streamlit run app.py
 """
 
+import os
 import uuid
+
 import requests
 import streamlit as st
+from dotenv import load_dotenv
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -24,9 +27,6 @@ st.set_page_config(
 )
 
 # ── Read backend URL from environment (falls back to localhost) ────────────────
-import os
-from dotenv import load_dotenv
-
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 

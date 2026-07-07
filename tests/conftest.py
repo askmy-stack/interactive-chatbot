@@ -5,7 +5,6 @@ Sets a fake OPENAI_API_KEY so pydantic-settings validation passes
 without a real key during CI runs.
 """
 
-import os
 import pytest
 
 

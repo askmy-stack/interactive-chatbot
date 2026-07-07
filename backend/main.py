@@ -13,11 +13,12 @@ For horizontal scaling, swap `session_histories` for a Redis-backed store.
 from __future__ import annotations
 
 import os
+
 import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import BaseModel
 
 from backend.config import settings
 
@@ -38,6 +39,17 @@ app = FastAPI(
 # In-memory session store: {session_id: [BaseMessage, ...]}
 # Each entry is a LangChain message list used as chat_history for the agent.
 session_histories: dict[str, list] = {}
+
+
+async def astream_response(user_input: str, session_id: str, history: list):
+    """
+    Lazy proxy so tests can patch `backend.main.astream_response` without importing
+    the full agent stack at module import time.
+    """
+    from backend.agent import astream_response as _astream_response
+
+    async for token in _astream_response(user_input, session_id, history):
+        yield token
 
 
 # ── Request/Response schemas ───────────────────────────────────────────────────
@@ -68,9 +80,6 @@ async def chat_stream(req: ChatRequest):
     """
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
-
-    # Import here so the agent executor is only built on the first real request
-    from backend.agent import astream_response
 
     history = session_histories.get(req.session_id, [])
 

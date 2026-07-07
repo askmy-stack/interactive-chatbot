@@ -6,8 +6,8 @@ All device domains and actions are validated against strict allow-lists
 so the LLM cannot be used to execute arbitrary API calls.
 """
 
-import structlog
 import requests
+import structlog
 from langchain_core.tools import tool
 
 log = structlog.get_logger()

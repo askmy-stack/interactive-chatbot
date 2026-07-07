@@ -5,7 +5,6 @@ These tests do NOT call OpenAI or any external LLM.
 They cover input validation, allow-list enforcement, and real system calls.
 """
 
-import pytest
 
 
 # ── system_info ────────────────────────────────────────────────────────────────
@@ -29,6 +28,7 @@ def test_device_control_no_ha_config(monkeypatch):
 
     # Reload config so the monkeypatch takes effect
     import importlib
+
     import backend.config
     importlib.reload(backend.config)
 
@@ -45,6 +45,7 @@ def test_device_control_blocks_invalid_domain(monkeypatch):
     monkeypatch.setenv("HOME_ASSISTANT_TOKEN", "fake-token")
 
     import importlib
+
     import backend.config
     importlib.reload(backend.config)
 
@@ -59,6 +60,7 @@ def test_device_control_blocks_invalid_action(monkeypatch):
     monkeypatch.setenv("HOME_ASSISTANT_TOKEN", "fake-token")
 
     import importlib
+
     import backend.config
     importlib.reload(backend.config)
 
@@ -73,6 +75,7 @@ def test_device_control_rejects_malformed_entity_id(monkeypatch):
     monkeypatch.setenv("HOME_ASSISTANT_TOKEN", "fake-token")
 
     import importlib
+
     import backend.config
     importlib.reload(backend.config)
 
