@@ -3,17 +3,18 @@ Long-term vector memory backed by ChromaDB.
 
 Each conversation turn is embedded and stored on disk in ./chroma_db.
 On every new query the top-k semantically similar past exchanges are retrieved
-and injected into the agent's context — giving Jarvis memory across sessions.
+and injected into the agent's context — giving the assistant memory across sessions.
 """
 
 from __future__ import annotations
 
 import structlog
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
 
+from backend.config import settings
 from backend.memory_graph import Fact, MemoryGraph
 from backend.ops import redact_text
+from backend.providers import get_embeddings
 
 log = structlog.get_logger()
 
@@ -24,9 +25,9 @@ _graph = MemoryGraph()
 def _get_vectorstore() -> Chroma:
     global _vectorstore
     if _vectorstore is None:
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        embeddings = get_embeddings()
         _vectorstore = Chroma(
-            collection_name="jarvis_memory",
+            collection_name=settings.memory_collection,
             embedding_function=embeddings,
             persist_directory="./chroma_db",
         )

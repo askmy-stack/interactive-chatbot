@@ -22,7 +22,7 @@ class VoiceService:
             return ""
 
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "jarvis.aiff"
+            out = Path(tmp) / "ask.aiff"
             proc = run(["say", "-o", str(out), text], capture_output=True, text=True, check=False)
             if proc.returncode != 0 or not out.exists():
                 return ""

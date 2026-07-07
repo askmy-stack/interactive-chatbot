@@ -1,5 +1,5 @@
 services:
-  jarvis:
+  ask:
     build: .
     ports:
       - "8501:8501"   # Streamlit UI

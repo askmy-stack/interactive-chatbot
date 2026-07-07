@@ -3,7 +3,7 @@
 A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Streamlit**.  
 Streams responses token-by-token, remembers conversations across sessions, controls smart home devices, and searches the web in real time.
 
-![Jarvis Demo](assets/jarvis-demo.gif)
+![A.S.K. Demo](assets/jarvis-demo.gif)
 
 > Replace `assets/jarvis-demo.gif` with your recorded product walkthrough for a richer preview.
 
@@ -13,7 +13,8 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 
 | Feature | Details |
 |---|---|
-| **Autonomous System Kernel Agent** | Tool-calling agent powered by `gpt-4o-mini` |
+| **Autonomous System Kernel Agent** | Tool-calling agent with pluggable LLM providers |
+| **Free local default** | Ollama + `llama3.2` — no API key required |
 | **Calendar Assistant** | Apple Calendar support for today schedule / next event / free slots |
 | **Web Search** | DuckDuckGo — no API key needed |
 | **Live Weather** | Open-Meteo free API — any city worldwide |
@@ -41,7 +42,7 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 │   backend/main.py    │
 │                      │
 │  ┌────────────────┐  │
-│  │ LangChain Agent│  │  gpt-4o-mini + tool-calling
+│  │ LangChain Agent│  │  Ollama / OpenAI / OpenRouter
 │  │ backend/agent  │  │
 │  └───────┬────────┘  │
 │          │           │
@@ -64,25 +65,30 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 
 ## Quick Start
 
-### Option A — Local
+### Option A — Local (free with Ollama)
 
 ```bash
 # 1. Clone
-git clone https://github.com/askmy-stack/Interactive-Chatbot.git
-cd Interactive-Chatbot
+git clone https://github.com/askmy-stack/Autonomous-System-Kernel.git
+cd Autonomous-System-Kernel
 
-# 2. Install (Python 3.11+)
+# 2. Install Ollama and pull a model (one-time)
+# https://ollama.com
+ollama pull llama3.2
+ollama pull nomic-embed-text
+
+# 3. Install (Python 3.11+)
 pip install uv
 uv pip install --system .
 
-# 3. Configure
+# 4. Configure
 cp .env.example .env
-# Edit .env — add your OPENAI_API_KEY at minimum
+# Defaults use Ollama — no paid API key required
 
-# 4. Run backend (terminal 1)
+# 5. Run backend (terminal 1)
 uvicorn backend.main:app --reload
 
-# 5. Run UI (terminal 2)
+# 6. Run UI (terminal 2)
 streamlit run app.py
 ```
 
@@ -98,25 +104,44 @@ Try these prompts:
 
 ```bash
 cp .env.example .env
-# Edit .env and add OPENAI_API_KEY
-
 docker compose up --build
 ```
 
 Open **http://localhost:8501**
 
+### Option C — OpenAI or OpenRouter (optional paid/hosted)
+
+```bash
+cp .env.example .env
+# For OpenAI:
+#   LLM_PROVIDER=openai
+#   OPENAI_API_KEY=sk-...
+# For OpenRouter free models:
+#   LLM_PROVIDER=openrouter
+#   OPENROUTER_API_KEY=sk-or-...
+```
+
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `.env.example` to `.env` and adjust as needed:
 
 ```bash
-# Required
-OPENAI_API_KEY=sk-...
+# Provider selection (auto picks OpenAI when OPENAI_API_KEY is set, else Ollama)
+LLM_PROVIDER=auto
 
-# Optional — model settings
-MODEL_NAME=gpt-4o-mini      # any OpenAI chat model
+# Free local defaults
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
+# Optional paid providers
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+
+# Optional — model override for active provider
+MODEL_NAME=
 TEMPERATURE=0.5
 
 # Optional — LangSmith tracing (https://smith.langchain.com)
@@ -125,8 +150,16 @@ LANGCHAIN_API_KEY=ls__...
 
 # Optional — Home Assistant smart home
 HOME_ASSISTANT_URL=http://192.168.1.100:8123
-HOME_ASSISTANT_TOKEN=eyJ...   # Long-Lived Access Token from HA profile
+HOME_ASSISTANT_TOKEN=eyJ...
 ```
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `LLM_PROVIDER` | No | `auto` | `auto`, `ollama`, `openai`, or `openrouter` |
+| `OLLAMA_MODEL` | No | `llama3.2` | Local chat model via Ollama |
+| `OPENAI_API_KEY` | No | — | Enables OpenAI when set (or `LLM_PROVIDER=openai`) |
+| `OPENROUTER_API_KEY` | No | — | Enables OpenRouter hosted models |
+| `MODEL_NAME` | No | provider default | Override model id for active provider |
 
 ---
 
@@ -158,14 +191,14 @@ pytest tests/ -v
 ruff check .
 
 # Type-check
-mypy backend/
+mypy backend/ --ignore-missing-imports
 ```
 
 ### API Endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Liveness check |
+| `GET` | `/health` | Liveness check (provider + model) |
 | `POST` | `/chat/stream` | Stream agent response |
 | `POST` | `/voice/chat` | Voice transcript in, response + audio out |
 | `POST` | `/voice/tts` | Text to local synthesized speech payload |
@@ -185,7 +218,8 @@ Interactive docs at **http://localhost:8000/docs**
 - **FastAPI** — async backend, streaming responses
 - **Streamlit** — web UI
 - **LangChain v0.3** — agent, tool-calling, LCEL
-- **langchain-openai** — `gpt-4o-mini` via `ChatOpenAI`
+- **langchain-ollama** — local models via Ollama (default)
+- **langchain-openai** — optional OpenAI / OpenRouter chat models
 - **ChromaDB** — local vector store for persistent memory
 - **pydantic-settings** — typed, validated config from `.env`
 - **structlog** — structured JSON logging
@@ -202,5 +236,6 @@ Interactive docs at **http://localhost:8000/docs**
 - [x] Apple Calendar read workflows
 - [x] Voice request/response pathway
 - [x] Memory graph + morning brief
+- [x] Pluggable LLM providers (Ollama default, optional OpenAI/OpenRouter)
 - [ ] Native push-to-talk streaming STT
 - [ ] Calendar write operations with approval guardrails

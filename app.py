@@ -1,5 +1,5 @@
 """
-Jarvis — Streamlit frontend.
+A.S.K. — Streamlit frontend.
 
 Connects to the FastAPI backend (default: http://localhost:8000) and streams
 responses token-by-token so the user sees text appearing in real time.
@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Jarvis",
+    page_title="A.S.K.",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -40,7 +40,8 @@ if "messages" not in st.session_state:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("⚙️ Jarvis")
+    st.title("⚙️ A.S.K.")
+    st.caption("Autonomous System Kernel")
     st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
 
     st.divider()
@@ -89,13 +90,15 @@ with st.sidebar:
     st.divider()
     try:
         health = requests.get(f"{BACKEND_URL}/health", timeout=2).json()
-        st.success(f"Backend online · {health.get('model', '?')}")
+        provider = health.get("provider", "?")
+        model = health.get("model", "?")
+        st.success(f"Backend online · {provider} / {model}")
     except Exception:
         st.error("Backend offline — start it with:\n`uvicorn backend.main:app`")
 
 
 # ── Main chat area ─────────────────────────────────────────────────────────────
-st.title("🤖 Jarvis — Personal AI Assistant")
+st.title("🤖 A.S.K. — Autonomous System Kernel")
 st.caption("Your personal assistant with real-time tools and persistent memory.")
 
 voice_transcript = st.text_input("Voice transcript (fallback input)", value="", key="voice_transcript")
@@ -118,7 +121,7 @@ for msg in st.session_state.messages:
 prefill = st.session_state.pop("prefill", None)
 
 # Chat input
-user_input = st.chat_input("Ask Jarvis anything…", key="chat_input")
+user_input = st.chat_input("Ask A.S.K. anything…", key="chat_input")
 if prefill and not user_input:
     user_input = prefill
 
@@ -150,7 +153,7 @@ if user_input:
 
         except requests.exceptions.ConnectionError:
             full_response = (
-                "**Cannot reach the Jarvis backend.**\n\n"
+                "**Cannot reach the A.S.K. backend.**\n\n"
                 "Start it with:\n```\nuvicorn backend.main:app --reload\n```"
             )
             placeholder.error(full_response)

@@ -33,7 +33,7 @@ jobs:
       - name: Run tests (pytest)
         run: pytest tests/ -v --tb=short
         env:
-          OPENAI_API_KEY: "sk-test-placeholder-for-ci"
+          LLM_PROVIDER: "ollama"
 
   secret-scan:
     name: Secret scanning

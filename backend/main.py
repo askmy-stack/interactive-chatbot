@@ -1,5 +1,5 @@
 """
-Jarvis FastAPI backend.
+A.S.K. (Autonomous System Kernel) FastAPI backend.
 
 Endpoints:
   GET  /health              — liveness check
@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from backend.config import settings
 from backend.memory_graph import MemoryGraph
 from backend.ops import backup_file
+from backend.providers import effective_model_name, resolve_provider
 from backend.voice.service import VoiceService
 from backend.workflows.daily_brief import build_morning_brief
 
@@ -35,7 +36,7 @@ if settings.langchain_tracing_v2 and settings.langchain_api_key:
 log = structlog.get_logger()
 
 app = FastAPI(
-    title="Jarvis API",
+    title="A.S.K. API",
     version="1.0.0",
     description="Personal AI assistant backend with tool-calling, vector memory, and streaming.",
 )
@@ -79,8 +80,12 @@ class TtsRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    """Liveness check — also surfaces the active model name."""
-    return {"status": "ok", "model": settings.model_name}
+    """Liveness check — surfaces the active provider and model."""
+    return {
+        "status": "ok",
+        "provider": resolve_provider(),
+        "model": effective_model_name(),
+    }
 
 
 @app.post("/chat/stream")
@@ -89,7 +94,7 @@ async def chat_stream(req: ChatRequest):
     Stream an agent response token-by-token.
 
     The response body is plain text with chunks arriving as the LLM generates them.
-    Tool-use announcements are interspersed so the caller can show Jarvis 'thinking'.
+    Tool-use announcements are interspersed so the caller can see the assistant thinking.
 
     Session history is updated after the full response is assembled.
     The exchange is also saved to the ChromaDB long-term memory store.

@@ -1,4 +1,4 @@
-# Jarvis Project Status & Execution Guide
+# A.S.K. Project Status & Execution Guide
 
 **Status:** Complete architecture transformation from simple chatbot to production-grade AI assistant.  
 **Branch:** `claude/add-claude-documentation-GUacQ` (merged, ready for deployment)
@@ -110,19 +110,17 @@ cd Interactive-Chatbot
 # Copy the template
 cp .env.example .env
 
-# Edit .env and add your key
-# On macOS/Linux:
-nano .env
-# Or your preferred editor
-
-# Add your OpenAI key:
-# OPENAI_API_KEY=sk-... (paste your real key here)
+# Edit .env — defaults use Ollama (no paid key required)
+# Optional: set OPENAI_API_KEY or OPENROUTER_API_KEY for hosted models
 ```
 
 **Variables explained:**
 ```
-OPENAI_API_KEY          Required. Get from openai.com/api/keys
-MODEL_NAME              Optional. Default: gpt-4o-mini (recommended)
+LLM_PROVIDER            Optional. Default: auto (Ollama when no paid key is set)
+OLLAMA_MODEL            Optional. Default: llama3.2 (requires `ollama pull llama3.2`)
+OPENAI_API_KEY          Optional. Enables OpenAI when set
+OPENROUTER_API_KEY      Optional. Enables OpenRouter hosted models
+MODEL_NAME              Optional. Override model for active provider
 TEMPERATURE            Optional. Default: 0.5 (slightly creative)
 LANGCHAIN_TRACING_V2   Optional. Set to true to enable LangSmith debugging
 HOME_ASSISTANT_URL     Optional. Only if you have Home Assistant
@@ -272,7 +270,7 @@ cd Interactive-Chatbot
 
 # 2. Set up environment
 cp .env.example .env
-# Edit .env — add OPENAI_API_KEY
+# Edit .env — defaults use Ollama (optional: OPENAI_API_KEY for hosted models)
 
 # 3. Install dependencies
 pip install uv
@@ -302,7 +300,7 @@ cd Interactive-Chatbot
 
 # 2. Configure
 cp .env.example .env
-nano .env  # add OPENAI_API_KEY
+nano .env  # optional: OPENAI_API_KEY or OPENROUTER_API_KEY
 
 # 3. Build and run
 docker compose up --build
@@ -319,7 +317,7 @@ docker compose down
 **To persist data between restarts:**
 ```bash
 docker compose up -d  # run in background
-docker logs jarvis-chatbot  # view logs
+docker compose logs ask  # view logs
 docker compose down  # chroma_db/ persists automatically
 ```
 
@@ -409,18 +407,22 @@ uv pip install --system .
 
 ---
 
-### Problem: "ValidationError: OPENAI_API_KEY is required"
+### Problem: "Cannot connect to Ollama" or model errors
 
-**Cause:** Missing API key in `.env`.
+**Cause:** Ollama is not running or the model was not pulled.
 
 **Fix:**
 ```bash
-cp .env.example .env
-nano .env
-# Add: OPENAI_API_KEY=sk-...
+ollama serve
+ollama pull llama3.2
+ollama pull nomic-embed-text
 ```
 
+Or set `LLM_PROVIDER=openai` and add `OPENAI_API_KEY` in `.env`.
+
 ---
+
+### Problem: OpenAI/OpenRouter not used when expected
 
 ### Problem: "Cannot connect to Home Assistant"
 
@@ -448,9 +450,9 @@ streamlit run app.py --server.port 8502
 
 ---
 
-### Problem: Tests fail with "OPENAI_API_KEY is required"
+### Problem: Tests fail with provider configuration errors
 
-**Cause:** `tests/conftest.py` not injecting fake key.
+**Cause:** `tests/conftest.py` not setting Ollama defaults.
 
 **Fix:** Ensure you ran `pytest` from the repo root:
 ```bash
@@ -465,8 +467,9 @@ Not from a subdirectory.
 
 ### Before First Use
 - [ ] Revoke exposed API keys from `langchain.ipynb`
-- [ ] Create `.env` file and add `OPENAI_API_KEY`
-- [ ] Run `pytest tests/ -v` — all 15 tests should pass
+- [ ] Create `.env` file (`cp .env.example .env`)
+- [ ] Pull Ollama models: `ollama pull llama3.2` and `ollama pull nomic-embed-text`
+- [ ] Run `pytest tests/ -v` — all tests should pass
 - [ ] Start backend: `uvicorn backend.main:app --reload`
 - [ ] Start UI: `streamlit run app.py`
 - [ ] Test in browser: ask "What's my CPU usage?"
@@ -475,7 +478,7 @@ Not from a subdirectory.
 - [ ] Run full test suite locally
 - [ ] Verify `.env` is in `.gitignore` (it is)
 - [ ] Test with `docker compose up --build`
-- [ ] Check logs: `docker compose logs jarvis-chatbot`
+- [ ] Check logs: `docker compose logs ask`
 - [ ] Confirm `/health` endpoint returns 200
 - [ ] Test streaming response in browser
 

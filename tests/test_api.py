@@ -20,7 +20,7 @@ def client():
     async def _fake_stream(user_input, session_id, chat_history):
         yield "Hello "
         yield "from "
-        yield "Jarvis!"
+        yield "A.S.K.!"
 
     with patch("backend.main.astream_response", new=_fake_stream):
         # Pre-import so the patch is in place when TestClient starts
@@ -39,6 +39,7 @@ def test_health_returns_ok(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "model" in data
+    assert "provider" in data
 
 
 # ── /chat/stream ───────────────────────────────────────────────────────────────
@@ -46,10 +47,10 @@ def test_health_returns_ok(client):
 def test_chat_stream_returns_text(client):
     resp = client.post(
         "/chat/stream",
-        json={"message": "Hello Jarvis", "session_id": "test-session"},
+        json={"message": "Hello A.S.K.", "session_id": "test-session"},
     )
     assert resp.status_code == 200
-    assert "Jarvis" in resp.text
+    assert "A.S.K." in resp.text
 
 
 def test_chat_stream_rejects_empty_message(client):

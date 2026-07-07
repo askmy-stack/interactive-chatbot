@@ -1,14 +1,15 @@
 """
 Shared pytest fixtures.
 
-Sets a fake OPENAI_API_KEY so pydantic-settings validation passes
-without a real key during CI runs.
+Uses Ollama as the default provider in tests so no paid API keys are required.
 """
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def fake_openai_key(monkeypatch):
-    """Inject a placeholder API key so Settings() doesn't raise on import."""
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-placeholder-for-ci")
+def test_llm_env(monkeypatch):
+    """Prefer local Ollama defaults and clear paid keys unless a test overrides them."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")

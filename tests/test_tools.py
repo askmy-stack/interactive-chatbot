@@ -1,5 +1,5 @@
 """
-Unit tests for the Jarvis tool functions.
+Unit tests for the A.S.K. tool functions.
 
 These tests do NOT call OpenAI or any external LLM.
 They cover input validation, allow-list enforcement, and real system calls.

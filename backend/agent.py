@@ -1,7 +1,7 @@
 """
-Jarvis LangChain tool-calling agent.
+A.S.K. LangChain tool-calling agent.
 
-Uses gpt-4o-mini with four tools:
+Uses the configured LLM provider (Ollama by default) with tools:
   - get_system_info  — host CPU/memory/disk
   - web_search       — DuckDuckGo (no key needed)
   - get_weather      — Open-Meteo (no key needed)
@@ -17,10 +17,9 @@ import structlog
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 
-from backend.config import settings
 from backend.memory import retrieve_memories, save_to_memory
+from backend.providers import get_chat_model
 from backend.tools.calendar_apple import get_free_time_blocks, get_next_event, get_today_schedule
 from backend.tools.device_control import control_device
 from backend.tools.system_info import get_system_info
@@ -61,11 +60,7 @@ Behaviour rules:
 
 
 def _build_agent() -> AgentExecutor:
-    llm = ChatOpenAI(
-        model=settings.model_name,
-        temperature=settings.temperature,
-        streaming=True,
-    )
+    llm = get_chat_model(streaming=True)
 
     prompt = ChatPromptTemplate.from_messages(
         [
