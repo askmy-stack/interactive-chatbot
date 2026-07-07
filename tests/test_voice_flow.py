@@ -23,7 +23,23 @@ def client():
 def test_voice_tts_endpoint(client):
     resp = client.post("/voice/tts", json={"text": "hello"})
     assert resp.status_code == 200
-    assert "audio_base64" in resp.json()
+    data = resp.json()
+    assert "audio_base64" in data
+    assert "tts_available" in data
+
+
+def test_voice_tts_status(client):
+    resp = client.get("/voice/tts/status")
+    assert resp.status_code == 200
+    assert "tts_available" in resp.json()
+
+
+def test_health_includes_deployment_mode(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "deployment_mode" in data
+    assert "tts" in data
 
 
 def test_morning_brief_endpoint(client):

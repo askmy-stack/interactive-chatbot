@@ -8,8 +8,6 @@ version = "0.1.0"
 description = "A.S.K. (Autonomous System Kernel) — personal AI assistant with tool-calling, vector memory, and streaming"
 requires-python = ">=3.11"
 dependencies = [
-    # UI
-    "streamlit>=1.35",
     # API layer
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
@@ -35,6 +33,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ui = [
+    "streamlit>=1.35",
+]
+tts = [
+    "pyttsx3>=2.90",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

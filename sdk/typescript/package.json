@@ -1,0 +1,8 @@
+{
+  "name": "@ask/kernel-sdk",
+  "version": "0.1.0",
+  "description": "A.S.K. TypeScript SDK",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

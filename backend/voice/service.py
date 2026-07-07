@@ -1,23 +1,15 @@
 from __future__ import annotations
 
-import base64
-import shutil
-import tempfile
-from pathlib import Path
-from subprocess import run
-
 from backend.voice.stt import SttEngine, SttResult
+from backend.voice.tts import TtsEngine, TtsResult
 
 
 class VoiceService:
-    """Local-first voice helpers for macOS.
-
-    STT supports faster-whisper, whisper CLI, or browser transcript validation.
-    TTS uses macOS `say` when available.
-    """
+    """Local-first voice helpers with cross-platform TTS fallback."""
 
     def __init__(self) -> None:
         self.stt = SttEngine()
+        self.tts = TtsEngine()
 
     def transcribe_text(self, transcript: str) -> str:
         return self.stt.validate_browser_transcript(transcript).text
@@ -31,13 +23,8 @@ class VoiceService:
             "local_stt_available": len(self.stt.available_backends) > 1,
         }
 
-    def synthesize(self, text: str) -> str:
-        if not shutil.which("say"):
-            return ""
+    def tts_status(self) -> dict:
+        return self.tts.status()
 
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "ask.aiff"
-            proc = run(["say", "-o", str(out), text], capture_output=True, text=True, check=False)
-            if proc.returncode != 0 or not out.exists():
-                return ""
-            return base64.b64encode(out.read_bytes()).decode("utf-8")
+    def synthesize(self, text: str) -> TtsResult:
+        return self.tts.synthesize(text)

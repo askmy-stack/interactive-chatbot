@@ -1,15 +1,15 @@
 services:
-  ask:
-    build: .
+  ask-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "8501:8501"   # Streamlit UI
-      - "8000:8000"   # FastAPI backend
+      - "8000:8000"
     env_file: .env
     environment:
-      # Tell Streamlit where the backend is (inside Docker, same container)
+      ASK_DEPLOYMENT_MODE: standalone
       BACKEND_URL: "http://localhost:8000"
     volumes:
-      # Persist the ChromaDB vector store across container restarts
       - ./chroma_db:/app/chroma_db
     restart: unless-stopped
     healthcheck:
@@ -18,3 +18,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  ask-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ASK_API_URL: "http://localhost:8000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      ask-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: local Ollama for free LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    profiles:
+      - ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

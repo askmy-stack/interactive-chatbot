@@ -3,7 +3,8 @@ A.S.K. (Autonomous System Kernel) FastAPI backend.
 
 Endpoints:
   GET  /health              — liveness check
-  POST /chat/stream         — stream agent response (text/plain chunked)
+  POST /chat/stream         — stream agent response (SSE with meta + tokens)
+  POST /voice/chat          — voice-in → voice-out with TTS
   DELETE /chat/{session_id} — clear in-memory session history
 
 Session history lives in a plain dict for simplicity.
@@ -12,21 +13,34 @@ For horizontal scaling, swap `session_histories` for a Redis-backed store.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator
 
 import structlog
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
-from pydantic import BaseModel, Field
 
 from backend.calendar_approval import approval_store
 from backend.config import settings
 from backend.memory_graph import Entity, EntityType, Fact, MemoryGraph
+from backend.middleware import ApiKeyMiddleware, ClientHeaderMiddleware, configure_cors
 from backend.ops import backup_file, list_backups, restore_file
 from backend.providers import effective_model_name, resolve_provider
 from backend.providers.health import check_all_providers
+from backend.schemas import (
+    CalendarApproveRequest,
+    ChatEnvelope,
+    ChatRequest,
+    EntityRequest,
+    RestoreRequest,
+    StreamMeta,
+    SttTranscribeRequest,
+    TtsInfo,
+    TtsRequest,
+    VoiceChatRequest,
+)
 from backend.voice.service import VoiceService
 from backend.voice.stt import decode_audio_payload
 from backend.workflows.daily_brief import build_morning_brief
@@ -43,9 +57,13 @@ log = structlog.get_logger()
 
 app = FastAPI(
     title="A.S.K. API",
-    version="1.1.0",
+    version="1.2.0",
     description="Personal AI assistant backend with tool-calling, vector memory, and streaming.",
 )
+
+configure_cors(app)
+app.add_middleware(ClientHeaderMiddleware)
+app.add_middleware(ApiKeyMiddleware)
 
 # In-memory session store: {session_id: [BaseMessage, ...]}
 session_histories: dict[str, list] = {}
@@ -69,54 +87,28 @@ async def astream_response(user_input: str, session_id: str, chat_history: list)
         yield token
 
 
-# ── Request/Response schemas ───────────────────────────────────────────────────
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: str = "default"
-
-
-class VoiceChatRequest(BaseModel):
-    transcript: str
-    session_id: str = "default"
-
-
-class TtsRequest(BaseModel):
-    text: str
-
-
-class SttTranscribeRequest(BaseModel):
-    audio_base64: str
-    mime_type: str = "audio/wav"
-    browser_transcript: str = ""
-
-
-class CalendarApproveRequest(BaseModel):
-    action: str = Field(description="create_event or update_event")
-
-
-class RestoreRequest(BaseModel):
-    backup_path: str
-    target_path: str
-
-
-class EntityRequest(BaseModel):
-    entity_type: str
-    name: str
-    attributes: str = ""
-    source: str = "api"
+def _build_tts_info(tts_result, *, include_audio: bool) -> TtsInfo:
+    return TtsInfo(
+        tts_available=tts_result.available,
+        tts_provider=tts_result.provider if tts_result.available else None,
+        tts_unavailable_reason=tts_result.unavailable_reason,
+        audio_base64=tts_result.audio_base64 if include_audio and tts_result.available else None,
+    )
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
-def health():
+def health(request: Request):
     """Liveness check — surfaces the active provider and model."""
     return {
         "status": "ok",
         "provider": resolve_provider(),
         "model": effective_model_name(),
         "privacy_mode": settings.privacy_mode,
+        "deployment_mode": settings.ask_deployment_mode,
+        "client": getattr(request.state, "ask_client", "external-app"),
+        "tts": voice_service.tts_status(),
     }
 
 
@@ -130,6 +122,12 @@ def health_providers():
 def voice_stt_status():
     """Return available STT backends for graceful UI fallback."""
     return voice_service.stt_status()
+
+
+@app.get("/voice/tts/status")
+def voice_tts_status():
+    """Return available TTS backends."""
+    return voice_service.tts_status()
 
 
 @app.post("/voice/stt/transcribe")
@@ -193,57 +191,128 @@ async def voice_stt_stream(websocket: WebSocket):
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatRequest):
-    """Stream an agent response token-by-token."""
+async def chat_stream(req: ChatRequest, request: Request):
+    """Stream an agent response. Text-in → text-out (no TTS)."""
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
-    metrics["chat_requests"] += 1
+    if req.output_channel == "voice":
+        raise HTTPException(
+            status_code=400,
+            detail="text chat endpoint does not produce voice output; use /voice/chat",
+        )
 
-    history = session_histories.get(req.session_id, [])
+    metrics["chat_requests"] += 1
+    input_channel = req.input_channel
+    output_channel = req.output_channel
+    session_id = req.session_id
+    history = session_histories.get(session_id, [])
+    client = getattr(request.state, "ask_client", "external-app")
 
     async def generate() -> AsyncIterator[str]:
+        meta = StreamMeta(
+            session_id=session_id,
+            input_channel=input_channel,
+            output_channel=output_channel,
+        )
+        yield f"data: {json.dumps(meta.model_dump())}\n\n"
+
         full_response = ""
         try:
-            async for token in astream_response(req.message, req.session_id, history):
+            async for token in astream_response(req.message, session_id, history):
                 full_response += token
-                yield token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
         except Exception as exc:
             error_msg = f"[Error: {exc}]"
-            log.error("agent_error", session_id=req.session_id, error=str(exc))
-            yield error_msg
+            log.error("agent_error", session_id=session_id, error=str(exc))
             full_response = error_msg
+            yield f"data: {json.dumps({'type': 'token', 'content': error_msg})}\n\n"
 
-        session_histories[req.session_id] = history + [
+        session_histories[session_id] = history + [
             HumanMessage(content=req.message),
             AIMessage(content=full_response),
         ]
 
-    return StreamingResponse(generate(), media_type="text/plain")
+        done = {
+            "type": "done",
+            "session_id": session_id,
+            "input_channel": input_channel,
+            "output_channel": output_channel,
+            "response": full_response,
+            "client": client,
+        }
+        yield f"data: {json.dumps(done)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/chat")
+async def chat_sync(req: ChatRequest, request: Request):
+    """Non-streaming text chat for SDK consumers."""
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
+
+    metrics["chat_requests"] += 1
+    history = session_histories.get(req.session_id, [])
+    full_response = ""
+    async for token in astream_response(req.message, req.session_id, history):
+        full_response += token
+
+    session_histories[req.session_id] = history + [
+        HumanMessage(content=req.message),
+        AIMessage(content=full_response),
+    ]
+
+    envelope = ChatEnvelope(
+        session_id=req.session_id,
+        input_channel=req.input_channel,
+        output_channel=req.output_channel,
+        response=full_response,
+    )
+    return JSONResponse(content=envelope.model_dump())
 
 
 @app.post("/voice/chat")
-async def voice_chat(req: VoiceChatRequest):
-    """Accept transcript text, run assistant response, and return TTS audio payload."""
+async def voice_chat(req: VoiceChatRequest, request: Request):
+    """Voice-in → voice-out: transcript → agent response → TTS audio."""
     metrics["voice_requests"] += 1
     transcript = voice_service.transcribe_text(req.transcript)
     if not transcript:
         raise HTTPException(status_code=400, detail="transcript must not be empty")
+
     history = session_histories.get(req.session_id, [])
     full_response = ""
     async for token in astream_response(transcript, req.session_id, history):
         full_response += token
+
     session_histories[req.session_id] = history + [
         HumanMessage(content=transcript),
         AIMessage(content=full_response),
     ]
-    audio_b64 = voice_service.synthesize(full_response)
-    return {"transcript": transcript, "response": full_response, "audio_base64": audio_b64}
+
+    tts_result = voice_service.synthesize(full_response)
+    tts_info = _build_tts_info(tts_result, include_audio=True)
+
+    envelope = ChatEnvelope(
+        session_id=req.session_id,
+        input_channel=req.input_channel,
+        output_channel=req.output_channel,
+        response=full_response,
+        transcript=transcript,
+        tts=tts_info,
+    )
+    return JSONResponse(content=envelope.model_dump())
 
 
 @app.post("/voice/tts")
 def voice_tts(req: TtsRequest):
     """Synthesize speech from text."""
-    return {"audio_base64": voice_service.synthesize(req.text)}
+    tts_result = voice_service.synthesize(req.text)
+    return {
+        "audio_base64": tts_result.audio_base64,
+        "tts_available": tts_result.available,
+        "tts_provider": tts_result.provider,
+        "tts_unavailable_reason": tts_result.unavailable_reason,
+    }
 
 
 @app.post("/calendar/approve")

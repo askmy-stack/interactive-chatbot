@@ -1,6 +1,6 @@
 # A.S.K. (Autonomous System Kernel)
 
-A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Streamlit**.  
+A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Next.js**.  
 Streams responses token-by-token, remembers conversations across sessions, controls smart home devices, and searches the web in real time.
 
 ---
@@ -30,10 +30,10 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 
 ```
 ┌──────────────────────┐
-│   Streamlit UI       │  :8501
-│   app.py             │
+│   Next.js Web UI     │  :3000
+│   frontend/          │
 └──────────┬───────────┘
-           │ HTTP + streaming
+           │ HTTP + SSE
 ┌──────────▼───────────┐
 │   FastAPI Backend    │  :8000
 │   backend/main.py    │
@@ -57,6 +57,8 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 │  └────────────────┘  │
 └──────────────────────┘
 ```
+
+> **Note:** The legacy Streamlit UI (`app.py`) is deprecated. Use `ENABLE_LEGACY_STREAMLIT=true streamlit run app.py` only if needed.
 
 ---
 
@@ -83,13 +85,13 @@ cp .env.example .env
 # Defaults use Ollama — no paid API key required
 
 # 5. Run backend (terminal 1)
-uvicorn backend.main:app --reload
+uvicorn backend.main:app --reload --port 8000
 
-# 6. Run UI (terminal 2)
-streamlit run app.py
+# 6. Run web UI (terminal 2)
+cd frontend && npm install && npm run dev
 ```
 
-Open **http://localhost:8501**
+Open **http://localhost:3000**
 
 Try these prompts:
 - `What is my calendar today?`
@@ -104,7 +106,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open **http://localhost:8501**
+Open **http://localhost:3000** (web UI) · API at **http://localhost:8000**
 
 ### Option C — OpenAI or OpenRouter (optional paid/hosted)
 
@@ -177,10 +179,22 @@ Supported entity domains: `light`, `switch`, `fan`, `media_player`, `climate`, `
 
 ## Voice push-to-talk
 
-1. Start backend + Streamlit UI.
-2. Hold the **audio input** control (or type a browser transcript on Linux/CI).
+1. Start backend + Next.js UI.
+2. Hold the **mic button** to record (or type in the text composer).
 3. Audio is sent to `POST /voice/stt/transcribe`; if local STT is unavailable, the browser transcript is validated server-side.
-4. Transcript flows through `POST /voice/chat` and appears in the unified timeline with text messages.
+4. Voice messages flow through `POST /voice/chat` with auto-play TTS; text messages use `POST /chat/stream` (no TTS).
+
+## Integration modes
+
+A.S.K. supports three deployment modes via `ASK_DEPLOYMENT_MODE`:
+
+| Mode | Description |
+|---|---|
+| `standalone` | Full web UI + API (default) |
+| `sidecar` | API daemon; your app connects via SDK |
+| `embedded` | API only; CORS locked to `ASK_EXTERNAL_APP_ORIGIN` |
+
+See `docs/integration-guide.md` and `sdk/` for TypeScript and Python clients.
 
 ## Calendar approval flow
 
@@ -241,8 +255,9 @@ mypy backend/ --ignore-missing-imports
 ## Tech Stack
 
 - **Python 3.11**
-- **FastAPI** — async backend, streaming responses
-- **Streamlit** — web UI
+- **FastAPI** — async backend, streaming responses, channel-aware API
+- **Next.js** — full-stack web UI (App Router)
+- **Streamlit** — legacy UI (deprecated, optional via `ENABLE_LEGACY_STREAMLIT`)
 - **LangChain v0.3** — agent, tool-calling, LCEL
 - **langchain-ollama** — local models via Ollama (default)
 - **langchain-openai** — optional OpenAI / OpenRouter chat models
@@ -257,7 +272,11 @@ mypy backend/ --ignore-missing-imports
 
 ## Roadmap Snapshot
 
-- [x] FastAPI backend + Streamlit frontend split
+- [x] FastAPI backend + Next.js frontend
+- [x] API-first integration with TypeScript/Python SDKs
+- [x] Three deployment modes (standalone, sidecar, embedded)
+- [x] Channel-aware I/O (text→text, voice→voice)
+- [x] Cross-platform TTS fallback (macOS say, espeak, pyttsx3)
 - [x] Tool-calling agent with streaming
 - [x] Apple Calendar read workflows
 - [x] Voice request/response pathway

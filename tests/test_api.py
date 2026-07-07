@@ -51,6 +51,34 @@ def test_chat_stream_returns_text(client):
     )
     assert resp.status_code == 200
     assert "A.S.K." in resp.text
+    assert "data:" in resp.text
+
+
+def test_chat_sync_endpoint(client):
+    resp = client.post(
+        "/chat",
+        json={"message": "Hello sync", "session_id": "sync-session"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_id"] == "sync-session"
+    assert data["input_channel"] == "text"
+    assert data["output_channel"] == "text"
+    assert "response" in data
+
+
+def test_voice_chat_envelope(client):
+    resp = client.post(
+        "/voice/chat",
+        json={"transcript": "hello voice", "session_id": "voice-session"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_id"] == "voice-session"
+    assert data["input_channel"] == "voice"
+    assert data["output_channel"] == "voice"
+    assert data["transcript"] == "hello voice"
+    assert "tts" in data
 
 
 def test_chat_stream_rejects_empty_message(client):

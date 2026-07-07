@@ -42,8 +42,20 @@ class Settings(BaseSettings):
     home_assistant_url: str | None = None
     home_assistant_token: str | None = None
 
-    # Backend URL (consumed by Streamlit)
+    # Backend URL (consumed by web UI and SDKs)
     backend_url: str = "http://localhost:8000"
+
+    # Deployment mode: standalone | sidecar | embedded
+    ask_deployment_mode: str = "standalone"
+
+    # External app CORS origin (embedded/sidecar integration)
+    ask_external_app_origin: str = ""
+
+    # Optional API key for external integrations
+    ask_api_key: str = ""
+
+    # Legacy Streamlit UI (deprecated)
+    enable_legacy_streamlit: bool = False
 
     # Privacy and operations
     privacy_mode: str = "local_only"  # local_only | hybrid
