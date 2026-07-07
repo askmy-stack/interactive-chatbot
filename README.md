@@ -1,4 +1,4 @@
-# Jarvis — Personal AI Assistant
+# A.S.K. (Autonomous System Kernel)
 
 A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Streamlit**.  
 Streams responses token-by-token, remembers conversations across sessions, controls smart home devices, and searches the web in real time.
@@ -13,7 +13,7 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 
 | Feature | Details |
 |---|---|
-| **Jarvis Agent** | Tool-calling agent powered by `gpt-4o-mini` |
+| **Autonomous System Kernel Agent** | Tool-calling agent powered by `gpt-4o-mini` |
 | **Calendar Assistant** | Apple Calendar support for today schedule / next event / free slots |
 | **Web Search** | DuckDuckGo — no API key needed |
 | **Live Weather** | Open-Meteo free API — any city worldwide |
