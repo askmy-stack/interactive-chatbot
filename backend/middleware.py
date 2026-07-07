@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +25,7 @@ def _path_is_public(path: str) -> bool:
 class ApiKeyMiddleware(BaseHTTPMiddleware):
     """Optional bearer auth when ASK_API_KEY is configured."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[..., Awaitable[Response]]) -> Response:
         if not settings.ask_api_key or _path_is_public(request.url.path):
             return await call_next(request)
 
@@ -39,7 +39,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 class ClientHeaderMiddleware(BaseHTTPMiddleware):
     """Attach validated X-ASK-Client to request state."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[..., Awaitable[Response]]) -> Response:
         raw = request.headers.get(ASK_CLIENT_HEADER, "external-app")
         request.state.ask_client = raw if raw in VALID_CLIENTS else "external-app"
         return await call_next(request)
