@@ -13,19 +13,25 @@ For horizontal scaling, swap `session_histories` for a Redis-backed store.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 
 import structlog
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from backend.calendar_approval import approval_store
 from backend.config import settings
-from backend.memory_graph import MemoryGraph
-from backend.ops import backup_file
+from backend.memory_graph import Entity, EntityType, Fact, MemoryGraph
+from backend.ops import backup_file, list_backups, restore_file
 from backend.providers import effective_model_name, resolve_provider
+from backend.providers.health import check_all_providers
 from backend.voice.service import VoiceService
+from backend.voice.stt import decode_audio_payload
 from backend.workflows.daily_brief import build_morning_brief
+from backend.workflows.eod_recap import build_eod_recap, build_next_day_prep
+from backend.workflows.reminders import build_proactive_reminders
 
 # Enable LangSmith tracing if configured
 if settings.langchain_tracing_v2 and settings.langchain_api_key:
@@ -37,16 +43,19 @@ log = structlog.get_logger()
 
 app = FastAPI(
     title="A.S.K. API",
-    version="1.0.0",
+    version="1.1.0",
     description="Personal AI assistant backend with tool-calling, vector memory, and streaming.",
 )
 
 # In-memory session store: {session_id: [BaseMessage, ...]}
-# Each entry is a LangChain message list used as chat_history for the agent.
 session_histories: dict[str, list] = {}
 voice_service = VoiceService()
 memory_graph = MemoryGraph()
-metrics: dict[str, int] = {"chat_requests": 0, "voice_requests": 0}
+metrics: dict[str, int] = {
+    "chat_requests": 0,
+    "voice_requests": 0,
+    "stt_requests": 0,
+}
 
 
 async def astream_response(user_input: str, session_id: str, chat_history: list):
@@ -76,6 +85,28 @@ class TtsRequest(BaseModel):
     text: str
 
 
+class SttTranscribeRequest(BaseModel):
+    audio_base64: str
+    mime_type: str = "audio/wav"
+    browser_transcript: str = ""
+
+
+class CalendarApproveRequest(BaseModel):
+    action: str = Field(description="create_event or update_event")
+
+
+class RestoreRequest(BaseModel):
+    backup_path: str
+    target_path: str
+
+
+class EntityRequest(BaseModel):
+    entity_type: str
+    name: str
+    attributes: str = ""
+    source: str = "api"
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -85,27 +116,92 @@ def health():
         "status": "ok",
         "provider": resolve_provider(),
         "model": effective_model_name(),
+        "privacy_mode": settings.privacy_mode,
     }
+
+
+@app.get("/health/providers")
+def health_providers():
+    """Probe Ollama/OpenAI/OpenRouter and suggest fallback order."""
+    return check_all_providers()
+
+
+@app.get("/voice/stt/status")
+def voice_stt_status():
+    """Return available STT backends for graceful UI fallback."""
+    return voice_service.stt_status()
+
+
+@app.post("/voice/stt/transcribe")
+def voice_stt_transcribe(req: SttTranscribeRequest):
+    """Transcribe uploaded audio; falls back to validated browser transcript."""
+    metrics["stt_requests"] += 1
+    if req.audio_base64:
+        try:
+            audio_bytes = decode_audio_payload(req.audio_base64)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"invalid audio payload: {exc}") from exc
+        result = voice_service.transcribe_audio(audio_bytes, mime_type=req.mime_type)
+        if result.text:
+            return {"text": result.text, "backend": result.backend, "confidence": result.confidence}
+    if req.browser_transcript.strip():
+        result = voice_service.stt.validate_browser_transcript(req.browser_transcript)
+        return {"text": result.text, "backend": result.backend, "confidence": result.confidence}
+    return {
+        "text": "",
+        "backend": "unavailable",
+        "confidence": None,
+        "detail": "No local STT backend available. Send browser_transcript as fallback.",
+    }
+
+
+@app.websocket("/voice/stt/stream")
+async def voice_stt_stream(websocket: WebSocket):
+    """Chunked audio STT over WebSocket. Send JSON {audio_base64, mime_type, final: bool}."""
+    await websocket.accept()
+    try:
+        while True:
+            payload = await websocket.receive_json()
+            audio_b64 = payload.get("audio_base64", "")
+            mime_type = payload.get("mime_type", "audio/wav")
+            browser_transcript = payload.get("browser_transcript", "")
+            is_final = bool(payload.get("final", True))
+
+            if audio_b64:
+                audio_bytes = decode_audio_payload(audio_b64)
+                result = voice_service.transcribe_audio(audio_bytes, mime_type=mime_type)
+            elif browser_transcript:
+                result = voice_service.stt.validate_browser_transcript(browser_transcript)
+            else:
+                result = voice_service.stt.validate_browser_transcript("")
+
+            await websocket.send_json(
+                {
+                    "text": result.text,
+                    "backend": result.backend,
+                    "confidence": result.confidence,
+                    "final": is_final,
+                }
+            )
+            if is_final:
+                break
+    except WebSocketDisconnect:
+        log.info("stt_stream_disconnected")
+    except Exception as exc:
+        await websocket.send_json({"error": str(exc)})
+        await websocket.close()
 
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
-    """
-    Stream an agent response token-by-token.
-
-    The response body is plain text with chunks arriving as the LLM generates them.
-    Tool-use announcements are interspersed so the caller can see the assistant thinking.
-
-    Session history is updated after the full response is assembled.
-    The exchange is also saved to the ChromaDB long-term memory store.
-    """
+    """Stream an agent response token-by-token."""
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
     metrics["chat_requests"] += 1
 
     history = session_histories.get(req.session_id, [])
 
-    async def generate():
+    async def generate() -> AsyncIterator[str]:
         full_response = ""
         try:
             async for token in astream_response(req.message, req.session_id, history):
@@ -117,7 +213,6 @@ async def chat_stream(req: ChatRequest):
             yield error_msg
             full_response = error_msg
 
-        # Persist to in-memory session history for next turn
         session_histories[req.session_id] = history + [
             HumanMessage(content=req.message),
             AIMessage(content=full_response),
@@ -151,6 +246,20 @@ def voice_tts(req: TtsRequest):
     return {"audio_base64": voice_service.synthesize(req.text)}
 
 
+@app.post("/calendar/approve")
+def calendar_approve(req: CalendarApproveRequest):
+    """Issue a short-lived approval token required for calendar mutations."""
+    if req.action not in {"create_event", "update_event"}:
+        raise HTTPException(status_code=400, detail="action must be create_event or update_event")
+    grant = approval_store.request_approval(req.action)
+    return {
+        "approval_token": grant.token,
+        "action": grant.action,
+        "expires_in_seconds": approval_store.ttl_seconds,
+        "message": "User must confirm this action before the token is used.",
+    }
+
+
 @app.delete("/chat/{session_id}")
 def clear_session(session_id: str):
     """Clear in-memory chat history for a session."""
@@ -178,6 +287,49 @@ def morning_brief():
     return {"brief": build_morning_brief(memory_graph)}
 
 
+@app.get("/brief/eod")
+def eod_brief():
+    return {"brief": build_eod_recap(memory_graph)}
+
+
+@app.get("/brief/next-day")
+def next_day_brief():
+    return {"brief": build_next_day_prep(memory_graph)}
+
+
+@app.get("/brief/reminders")
+def reminders_brief():
+    return {"brief": build_proactive_reminders()}
+
+
+@app.get("/memory/graph/summary")
+def memory_graph_summary():
+    return memory_graph.summary()
+
+
+@app.post("/memory/graph/entity")
+def add_memory_entity(req: EntityRequest):
+    try:
+        entity_type = EntityType(req.entity_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid entity_type") from exc
+    entity_id = memory_graph.add_entity(
+        Entity(
+            entity_type=entity_type,
+            name=req.name,
+            attributes=req.attributes,
+            source=req.source,
+        )
+    )
+    return {"id": entity_id, "entity_type": req.entity_type, "name": req.name}
+
+
+@app.post("/memory/graph/fact")
+def add_memory_fact(key: str, value: str, source: str = "api"):
+    memory_graph.add_fact(Fact(key=key, value=value, source=source))
+    return {"stored": True, "key": key}
+
+
 @app.get("/metrics")
 def get_metrics():
     return metrics
@@ -191,4 +343,13 @@ def create_backup():
         "privacy_mode": settings.privacy_mode,
         "chroma_backup": chroma_backup,
         "graph_backup": graph_backup,
+        "backups": list_backups(),
     }
+
+
+@app.post("/ops/restore")
+def restore_backup(req: RestoreRequest):
+    restored = restore_file(req.backup_path, req.target_path)
+    if not restored:
+        raise HTTPException(status_code=400, detail="restore failed — check backup_path")
+    return {"restored": restored, "target": req.target_path}

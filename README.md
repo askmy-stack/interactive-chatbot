@@ -3,6 +3,10 @@
 A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Streamlit**.  
 Streams responses token-by-token, remembers conversations across sessions, controls smart home devices, and searches the web in real time.
 
+![A.S.K. Demo](assets/ask-demo.svg)
+
+> **Demo media:** `assets/ask-demo.svg` is a polished placeholder. Record a walkthrough and save it as `assets/jarvis-demo.gif`, then update this line to use the GIF. See [docs/local-privacy-runbook.md](docs/local-privacy-runbook.md).
+
 ---
 
 ## Features
@@ -15,7 +19,8 @@ Streams responses token-by-token, remembers conversations across sessions, contr
 | **Web Search** | DuckDuckGo — no API key needed |
 | **Live Weather** | Open-Meteo free API — any city worldwide |
 | **System Monitor** | Real-time CPU, memory, disk via psutil |
-| **Voice Path** | Voice transcript to response + local TTS endpoint |
+| **Voice Path** | Push-to-talk STT + TTS with browser transcript fallback |
+| **Calendar Writes** | Create/update events with approval tokens (read-only by default) |
 | **Smart Home** | Home Assistant REST API (optional) |
 | **Streaming** | Token-by-token output via FastAPI + SSE |
 | **Vector Memory** | Persistent ChromaDB — memory survives restarts |
@@ -174,6 +179,27 @@ Supported entity domains: `light`, `switch`, `fan`, `media_player`, `climate`, `
 
 ---
 
+## Voice push-to-talk
+
+1. Start backend + Streamlit UI.
+2. Hold the **audio input** control (or type a browser transcript on Linux/CI).
+3. Audio is sent to `POST /voice/stt/transcribe`; if local STT is unavailable, the browser transcript is validated server-side.
+4. Transcript flows through `POST /voice/chat` and appears in the unified timeline with text messages.
+
+## Calendar approval flow
+
+Calendar tools are read-only until the user confirms a write:
+
+```bash
+# 1) User confirms in chat/UI
+curl -X POST http://localhost:8000/calendar/approve -H 'Content-Type: application/json' \
+  -d '{"action":"create_event"}'
+
+# 2) Use approval_token in agent tool call (single-use, 5 min TTL)
+```
+
+---
+
 ## Development
 
 ```bash
@@ -198,7 +224,17 @@ mypy backend/ --ignore-missing-imports
 | `POST` | `/chat/stream` | Stream agent response |
 | `POST` | `/voice/chat` | Voice transcript in, response + audio out |
 | `POST` | `/voice/tts` | Text to local synthesized speech payload |
+| `POST` | `/voice/stt/transcribe` | Chunked/base64 audio STT with browser fallback |
+| `GET` | `/voice/stt/status` | Available STT backends |
+| `WS` | `/voice/stt/stream` | WebSocket chunked STT |
+| `POST` | `/calendar/approve` | Issue approval token for calendar writes |
+| `GET` | `/health/providers` | Ollama/OpenAI/OpenRouter health probes |
 | `GET` | `/brief/morning` | Daily brief from calendar + memory graph |
+| `GET` | `/brief/eod` | End-of-day recap |
+| `GET` | `/brief/next-day` | Next-day preparation brief |
+| `GET` | `/brief/reminders` | Meeting reminders + free-block suggestions |
+| `POST` | `/ops/restore` | Restore memory DB from backup |
+| `GET` | `/memory/graph/summary` | Entity counts (people, projects, goals, routines) |
 | `GET` | `/metrics` | Basic request counters |
 | `POST` | `/ops/backup` | Backup local memory stores |
 | `GET` | `/chat/{id}/history` | Inspect session history |
@@ -231,5 +267,10 @@ mypy backend/ --ignore-missing-imports
 - [x] Voice request/response pathway
 - [x] Memory graph + morning brief
 - [x] Pluggable LLM providers (Ollama default, optional OpenAI/OpenRouter)
-- [ ] Native push-to-talk streaming STT
-- [ ] Calendar write operations with approval guardrails
+- [x] Native push-to-talk streaming STT (with browser fallback)
+- [x] Calendar write operations with approval guardrails
+- [x] Memory graph entities (people, projects, goals, routines)
+- [x] EOD recap + next-day prep workflows
+- [x] Proactive meeting reminders
+- [x] Backup/restore ops + provider health checks
+- [x] Local-only privacy runbook

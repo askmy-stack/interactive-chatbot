@@ -6,16 +6,30 @@ import tempfile
 from pathlib import Path
 from subprocess import run
 
+from backend.voice.stt import SttEngine, SttResult
+
 
 class VoiceService:
     """Local-first voice helpers for macOS.
 
-    The STT path is intentionally simple in v1: callers can send text transcript directly.
-    The TTS path uses macOS `say` to generate spoken audio when available.
+    STT supports faster-whisper, whisper CLI, or browser transcript validation.
+    TTS uses macOS `say` when available.
     """
 
+    def __init__(self) -> None:
+        self.stt = SttEngine()
+
     def transcribe_text(self, transcript: str) -> str:
-        return transcript.strip()
+        return self.stt.validate_browser_transcript(transcript).text
+
+    def transcribe_audio(self, audio_bytes: bytes, *, mime_type: str = "audio/wav") -> SttResult:
+        return self.stt.transcribe_audio_bytes(audio_bytes, mime_type=mime_type)
+
+    def stt_status(self) -> dict:
+        return {
+            "backends": self.stt.available_backends,
+            "local_stt_available": len(self.stt.available_backends) > 1,
+        }
 
     def synthesize(self, text: str) -> str:
         if not shutil.which("say"):

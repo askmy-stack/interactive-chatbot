@@ -6,8 +6,10 @@ from backend.providers.factory import (
     get_embeddings,
     resolve_provider,
 )
+from backend.providers.health import check_all_providers
 
 __all__ = [
+    "check_all_providers",
     "effective_model_name",
     "get_chat_model",
     "get_embeddings",

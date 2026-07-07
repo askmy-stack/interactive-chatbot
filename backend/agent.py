@@ -20,7 +20,13 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from backend.memory import retrieve_memories, save_to_memory
 from backend.providers import get_chat_model
-from backend.tools.calendar_apple import get_free_time_blocks, get_next_event, get_today_schedule
+from backend.tools.calendar_apple import (
+    create_calendar_event,
+    get_free_time_blocks,
+    get_next_event,
+    get_today_schedule,
+    update_calendar_event,
+)
 from backend.tools.device_control import control_device
 from backend.tools.system_info import get_system_info
 from backend.tools.weather import get_weather
@@ -36,6 +42,8 @@ TOOLS = [
     get_today_schedule,
     get_next_event,
     get_free_time_blocks,
+    create_calendar_event,
+    update_calendar_event,
 ]
 
 SYSTEM_PROMPT = """\
@@ -48,12 +56,16 @@ You are Jarvis, a highly capable personal AI assistant. You have access to these
 • get_today_schedule — read today's Apple Calendar events
 • get_next_event    — get your next scheduled calendar event
 • get_free_time_blocks — get open windows in today's calendar
+• create_calendar_event — create events (requires approval_token)
+• update_calendar_event — update events (requires approval_token)
 
 Behaviour rules:
 - Be concise and action-oriented. Confirm every action you take.
 - Always use a tool when the question involves real-time data (weather, search, system stats).
 - For device control, confirm what you did and whether it succeeded.
 - If Home Assistant is not configured, acknowledge it clearly.
+- Calendar writes are read-only by default. Always ask the user to confirm, then obtain
+  an approval_token via POST /calendar/approve before calling create/update calendar tools.
 - When in doubt, ask a clarifying question before acting.
 
 {memory_context}"""
