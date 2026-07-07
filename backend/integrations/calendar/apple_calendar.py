@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import datetime
 
@@ -8,10 +9,13 @@ from backend.integrations.calendar.base import CalendarEvent
 
 
 class AppleCalendarProvider:
- """Reads macOS Calendar events via AppleScript."""
+    """Reads macOS Calendar events via AppleScript."""
 
- def get_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
-  script = """
+    def get_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
+        if not shutil.which("osascript"):
+            return []
+
+        script = """
 on run argv
   set startIso to item 1 of argv
   set endIso to item 2 of argv
@@ -56,26 +60,29 @@ on esc(s)
   return t
 end esc
 """
-  proc = subprocess.run(
-   ["osascript", "-", start.isoformat(), end.isoformat()],
-   input=script,
-   capture_output=True,
-   text=True,
-   check=False,
-  )
-  if proc.returncode != 0:
-   return []
+        try:
+            proc = subprocess.run(
+                ["osascript", "-", start.isoformat(), end.isoformat()],
+                input=script,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            return []
 
-  rows = json.loads(proc.stdout.strip() or "[]")
-  events: list[CalendarEvent] = []
-  for row in rows:
-   events.append(
-    CalendarEvent(
-     start=datetime.fromisoformat(row["start"]),
-     end=datetime.fromisoformat(row["end"]),
-     title=row["title"],
-     calendar=row.get("calendar"),
-    )
-   )
-  return sorted(events, key=lambda e: e.start)
+        if proc.returncode != 0:
+            return []
 
+        rows = json.loads(proc.stdout.strip() or "[]")
+        events: list[CalendarEvent] = []
+        for row in rows:
+            events.append(
+                CalendarEvent(
+                    start=datetime.fromisoformat(row["start"]),
+                    end=datetime.fromisoformat(row["end"]),
+                    title=row["title"],
+                    calendar=row.get("calendar"),
+                )
+            )
+        return sorted(events, key=lambda e: e.start)
