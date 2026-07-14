@@ -18,15 +18,26 @@ import os
 from collections.abc import AsyncIterator
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
 from backend.calendar_approval import approval_store
 from backend.config import settings
 from backend.memory_graph import Entity, EntityType, Fact, MemoryGraph
-from backend.middleware import ApiKeyMiddleware, ClientHeaderMiddleware, configure_cors
-from backend.ops import backup_file, list_backups, restore_file
+from backend.middleware import (
+    ApiKeyMiddleware,
+    ClientHeaderMiddleware,
+    configure_cors,
+    require_ops_auth,
+)
+from backend.ops import (
+    backup_file,
+    is_allowed_backup_source,
+    is_allowed_restore_target,
+    list_backups,
+    restore_file,
+)
 from backend.providers import effective_model_name, resolve_provider
 from backend.providers.health import check_all_providers
 from backend.schemas import (
@@ -404,7 +415,7 @@ def get_metrics():
     return metrics
 
 
-@app.post("/ops/backup")
+@app.post("/ops/backup", dependencies=[Depends(require_ops_auth)])
 def create_backup():
     chroma_backup = backup_file("./chroma_db/chroma.sqlite3")
     graph_backup = backup_file("./memory_graph.db")
@@ -416,8 +427,10 @@ def create_backup():
     }
 
 
-@app.post("/ops/restore")
+@app.post("/ops/restore", dependencies=[Depends(require_ops_auth)])
 def restore_backup(req: RestoreRequest):
+    if not is_allowed_backup_source(req.backup_path) or not is_allowed_restore_target(req.target_path):
+        raise HTTPException(status_code=400, detail="backup_path/target_path not in allowlist")
     restored = restore_file(req.backup_path, req.target_path)
     if not restored:
         raise HTTPException(status_code=400, detail="restore failed — check backup_path")

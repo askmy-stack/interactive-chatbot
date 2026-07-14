@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -34,6 +34,27 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
+
+def require_ops_auth(request: Request) -> None:
+    """Require a valid API key for ops endpoints (backup/restore), regardless of
+    whether ASK_API_KEY-based auth is otherwise optional for the rest of the API.
+
+    Ops endpoints can read/overwrite files on disk, so they fail closed: if no
+    key is configured at all, the endpoints are disabled rather than left open.
+    """
+    if not settings.ask_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ops endpoints require ASK_API_KEY to be configured",
+        )
+
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {settings.ask_api_key}":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
 
 
 class ClientHeaderMiddleware(BaseHTTPMiddleware):

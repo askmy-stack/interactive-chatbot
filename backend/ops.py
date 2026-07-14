@@ -7,6 +7,29 @@ from pathlib import Path
 
 from backend.config import settings
 
+# Fixed set of files /ops/backup manages. /ops/restore only allows restoring
+# into these paths, so a caller can't use it to overwrite arbitrary files.
+MANAGED_RESTORE_TARGETS = frozenset({"./chroma_db/chroma.sqlite3", "./memory_graph.db"})
+
+
+def _is_within(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve().relative_to(directory.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def is_allowed_restore_target(target_path: str) -> bool:
+    """Only allow restoring into the fixed set of files ops/backup manages."""
+    resolved = Path(target_path).resolve()
+    return resolved in {Path(p).resolve() for p in MANAGED_RESTORE_TARGETS}
+
+
+def is_allowed_backup_source(backup_path: str) -> bool:
+    """Only allow restoring from a backup file inside the configured backup dir."""
+    return _is_within(Path(backup_path), Path(settings.backup_dir))
+
 
 def redact_text(text: str) -> str:
     if not settings.redact_pii:

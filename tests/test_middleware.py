@@ -69,3 +69,28 @@ def test_chat_rejects_voice_output_channel(client):
         },
     )
     assert resp.status_code == 400
+
+
+def test_ops_backup_disabled_without_api_key(client):
+    with patch("backend.middleware.settings") as mock_settings:
+        mock_settings.ask_api_key = ""
+        resp = client.post("/ops/backup")
+        assert resp.status_code == 503
+
+
+def test_ops_backup_rejects_without_token(client):
+    with patch("backend.middleware.settings") as mock_settings:
+        mock_settings.ask_api_key = "test-secret"
+        resp = client.post("/ops/backup")
+        assert resp.status_code == 401
+
+
+def test_ops_restore_rejects_disallowed_target(client):
+    with patch("backend.middleware.settings") as mock_settings:
+        mock_settings.ask_api_key = "test-secret"
+        resp = client.post(
+            "/ops/restore",
+            json={"backup_path": "./backups/memory_graph.db.bak", "target_path": "/etc/passwd"},
+            headers={"Authorization": "Bearer test-secret"},
+        )
+        assert resp.status_code == 400

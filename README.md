@@ -243,12 +243,19 @@ mypy backend/ --ignore-missing-imports
 | `GET` | `/brief/eod` | End-of-day recap |
 | `GET` | `/brief/next-day` | Next-day preparation brief |
 | `GET` | `/brief/reminders` | Meeting reminders + free-block suggestions |
-| `POST` | `/ops/restore` | Restore memory DB from backup |
+| `POST` | `/ops/restore` | Restore memory DB from backup 🔒 |
 | `GET` | `/memory/graph/summary` | Entity counts (people, projects, goals, routines) |
 | `GET` | `/metrics` | Basic request counters |
-| `POST` | `/ops/backup` | Backup local memory stores |
+| `POST` | `/ops/backup` | Backup local memory stores 🔒 |
 | `GET` | `/chat/{id}/history` | Inspect session history |
 | `DELETE` | `/chat/{id}` | Clear session |
+
+🔒 `/ops/backup` and `/ops/restore` always require `Authorization: Bearer $ASK_API_KEY`,
+even when `ASK_API_KEY` is unset for the rest of the API — if no key is
+configured, these endpoints respond `503` instead of allowing open access.
+`/ops/restore` also only accepts `target_path` values from a fixed allowlist
+(the files `/ops/backup` manages) and `backup_path` values inside
+`BACKUP_DIR`, so it can't be used to read or overwrite arbitrary files.
 
 ---
 

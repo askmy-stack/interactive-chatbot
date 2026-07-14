@@ -92,7 +92,7 @@ def test_provider_health_endpoint(client):
     assert "active_provider" in body
 
 
-def test_ops_restore_endpoint(client, tmp_path):
+def test_ops_restore_endpoint_requires_auth(client, tmp_path):
     src = tmp_path / "source.db"
     dst = tmp_path / "target.db"
     src.write_text("backup-data", encoding="utf-8")
@@ -100,5 +100,29 @@ def test_ops_restore_endpoint(client, tmp_path):
         "/ops/restore",
         json={"backup_path": str(src), "target_path": str(dst)},
     )
+    # No ASK_API_KEY configured — ops endpoints fail closed rather than open.
+    assert resp.status_code == 503
+
+
+def test_ops_restore_endpoint_with_auth_and_allowlisted_target(client, tmp_path, monkeypatch):
+    from backend.config import Settings
+
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    backup_src = backup_dir / "source.db.bak"
+    backup_src.write_text("backup-data", encoding="utf-8")
+    dst = tmp_path / "target.db"
+
+    monkeypatch.setattr("backend.ops.MANAGED_RESTORE_TARGETS", frozenset({str(dst)}))
+    monkeypatch.setattr("backend.ops.settings", Settings(backup_dir=str(backup_dir)))
+
+    with patch("backend.middleware.settings") as mock_settings:
+        mock_settings.ask_api_key = "test-secret"
+        resp = client.post(
+            "/ops/restore",
+            json={"backup_path": str(backup_src), "target_path": str(dst)},
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
     assert resp.status_code == 200
     assert dst.read_text(encoding="utf-8") == "backup-data"
