@@ -23,8 +23,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_ASK_API_URL: "http://localhost:8000"
+    environment:
+      ASK_API_URL: "http://ask-api:8000"
+      ASK_API_KEY: "${ASK_API_KEY:-}"
     ports:
       - "3000:3000"
     depends_on:
