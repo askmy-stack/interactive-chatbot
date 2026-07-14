@@ -1,8 +1,13 @@
 /**
  * A.S.K. API client for the standalone web UI.
+ *
+ * Always calls the same-origin `/api/*` route handlers (see
+ * `app/api/[...path]/route.ts`), which proxy to the real A.S.K. API
+ * server-side and inject the API key there. The key must never be exposed to
+ * the browser via a `NEXT_PUBLIC_*` env var.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_ASK_API_URL || "/api";
+const API_BASE = "/api";
 
 export type InputChannel = "text" | "voice";
 export type OutputChannel = "text" | "voice";
@@ -40,13 +45,9 @@ export interface HealthInfo {
 }
 
 function headers(): Record<string, string> {
-  const h: Record<string, string> = {
+  return {
     "Content-Type": "application/json",
-    "X-ASK-Client": "standalone-web",
   };
-  const apiKey = process.env.NEXT_PUBLIC_ASK_API_KEY;
-  if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
-  return h;
 }
 
 export async function fetchHealth(): Promise<HealthInfo> {
