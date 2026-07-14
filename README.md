@@ -1,5 +1,7 @@
 # A.S.K. (Autonomous System Kernel)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A production-grade personal AI assistant built with **LangChain v0.3**, **FastAPI**, and **Next.js**.  
 Streams responses token-by-token, remembers conversations across sessions, controls smart home devices, and searches the web in real time.
 
@@ -296,3 +298,9 @@ configured, these endpoints respond `503` instead of allowing open access.
 - [x] Proactive meeting reminders
 - [x] Backup/restore ops + provider health checks
 - [x] Local-only privacy runbook
+
+---
+
+## License
+
+MIT © askmy-stack
